@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strings"
 //	"unicode/utf8"
+	"time"
 )
 
 type TwoFactorAuthRequest struct {
@@ -34,6 +35,7 @@ type VRChatUser struct {
 	CurrentAvatarAssetUrl         string   `json:"currentAvatarAssetUrl"`
 	CurrentAvatarImageUrl         string   `json:"currentAvatarImageUrl"`
 	CurrentAvatarThumbnailImageUrl string   `json:"currentAvatarThumbnailImageUrl"`
+	ID                            string   `json:"id"`
 }
 
 type Friend struct {
@@ -59,6 +61,7 @@ func main() {
 	http.HandleFunc("/2fa", handle2FA)
 	http.HandleFunc("/verify2fa", handleVerify2FA)
 	http.HandleFunc("/friends", handleFriends)
+	http.HandleFunc("/groups", handleGroups)
 	fmt.Println("Server is running on http://localhost:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -157,7 +160,14 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error parsing JSON response", http.StatusInternalServerError)
 		return
 	}
-	
+
+	// Store the user id into a cookie for later use
+	http.SetCookie(w, &http.Cookie{
+		Name:    "user_id",
+		Value:   user.ID,
+		Expires: time.Now().Add(30 * 24 * time.Hour),
+		Path:    "/",
+	})
 
 	// Generate HTML representation of the user data and friends list
 	htmlContent := generateUserHTML(user)
@@ -439,3 +449,27 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 // <img src="{{.ProfilePicOverride}}" alt="{{.DisplayName}}'s Avatar">
 // <img src="{{.ProfilePicOverrideThumbnail}}" alt="{{.DisplayName}}'s Avatar">
 
+func handleGroups(w http.ResponseWriter, r *http.Request) {
+	var ck, err = r.Cookie("user_id")
+	if err != nil {
+		http.Error(w, "Error no user id cookie stored", http.StatusInternalServerError)
+		return
+	}
+
+	var user_id = ck.Value
+
+	html := fmt.Sprintf(`
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<title>VRChat handleGroups</title>
+	</head>
+	<body>
+		%s
+	</body>
+	</html>
+	`, user_id)
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(html))
+}
