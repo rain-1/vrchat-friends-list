@@ -358,14 +358,26 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	statusMap := map[string]int{
+		"join me": 0,  // 🔵
+		"active":  1,  // 🟢
+		"ask me":  2,  // 🟠
+		"busy":    3,  // 🔴
+	}
 	sort.Slice(friends, func(i, j int) bool {
-		switch strings.Compare(friends[i].Status, friends[j].Status) {
-		case -1:
-			return true
-		case 1:
-			return false
+		statusI, existsI := statusMap[strings.ToLower(friends[i].Status)]
+		statusJ, existsJ := statusMap[strings.ToLower(friends[j].Status)]
+		
+		// Handle cases where the status might not be found (use default value of 99)
+		if !existsI {
+			statusI = 99
 		}
-		return false
+		if !existsJ {
+			statusJ = 99
+		}
+
+		// Compare the numeric values
+		return statusI < statusJ
 	})	
 
 	tmpl := template.Must(template.New("friends").Parse(`
