@@ -13,6 +13,7 @@ import (
 	"strings"
 //	"unicode/utf8"
 	"time"
+	"sort"
 )
 
 type TwoFactorAuthRequest struct {
@@ -357,6 +358,16 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sort.Slice(friends, func(i, j int) bool {
+		switch strings.Compare(friends[i].Status, friends[j].Status) {
+		case -1:
+			return true
+		case 1:
+			return false
+		}
+		return false
+	})	
+
 	tmpl := template.Must(template.New("friends").Parse(`
 <!DOCTYPE html>
 <html lang="en">
@@ -455,10 +466,48 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error no user id cookie stored", http.StatusInternalServerError)
 		return
 	}
-
 	var user_id = ck.Value
 
-	var endpoint = fmt.Sprintf(`/users/%s/instances/groups/`, user_id)
+	var endpoint = fmt.Sprintf(`https://vrchat.com/users/%s/instances/groups/`, user_id)
+
+	//////////////////////
+
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", endpoint, nil)
+	if err != nil {
+		http.Error(w, "Error creating request", http.StatusInternalServerError)
+		return
+	}
+
+	req.Header.Set("User-Agent", useragent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		http.Error(w, "Error making request", http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "Error reading response", http.StatusInternalServerError)
+		return
+	}
+
+	// Print result and return code to terminal
+	fmt.Printf("Status Code: %d\n", resp.StatusCode)
+	fmt.Printf("Response Body: %s\n", string(body))
+
+
+	// var authResp AuthResponse
+	// err = json.Unmarshal(body, &authResp)
+	// if err == nil && len(authResp.RequiresTwoFactorAuth) > 0 && authResp.RequiresTwoFactorAuth[0] == "emailOtp" {
+	// 	// Redirect to 2FA page
+	// 	http.Redirect(w, r, "/2fa", http.StatusSeeOther)
+	// 	return
+	// }
+
+	///////////////
 
 
 	html := fmt.Sprintf(`
