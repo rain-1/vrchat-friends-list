@@ -77,7 +77,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 	</head>
 	<body>
 		<h1>VRChat Login</h1>
-		<form action="/auth" method="get">
+		<form action="/auth" method="post">
 			<label for="username">Username:</label><br>
 			<input type="text" id="username" name="username"><br>
 			<label for="password">Password:</label><br>
@@ -91,10 +91,10 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
+	// if r.Method != "GET" {
+	// 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	// 	return
+	// }
 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -457,6 +457,9 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var user_id = ck.Value
+
+	var endpoint = fmt.Sprintf(`/users/%s/instances/groups/`, user_id)
+
 
 	html := fmt.Sprintf(`
 	<!DOCTYPE html>
