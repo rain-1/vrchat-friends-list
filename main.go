@@ -51,6 +51,8 @@ type Friend struct {
 	Location                       string   `json:"location"`
 }
 
+const useragent = "rain-1 vrchat-friend-list 1"
+
 func main() {
 	http.HandleFunc("/", handleLogin)
 	http.HandleFunc("/auth", handleAuth)
@@ -104,7 +106,7 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Header.Set("Authorization", "Basic "+auth)
-	req.Header.Set("User-Agent", "sky.moo vrchatfriendexperiment 1")
+	req.Header.Set("User-Agent", useragent)
 
 	// Forward cookies from client to API
 	for _, cookie := range r.Cookies() {
@@ -262,7 +264,7 @@ func handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", "sky.moo vrchatfriendexperiment 1")
+	req.Header.Set("User-Agent", useragent)
 
 	// Forward cookies from client to API
 	for _, cookie := range r.Cookies() {
@@ -322,7 +324,7 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 	for _, cookie := range r.Cookies() {
 		req.AddCookie(cookie)
 	}
-	req.Header.Set("User-Agent", "sky.moo vrchatfriendexperiment 1")
+	req.Header.Set("User-Agent", useragent)
 	//req.Header.Set("Cookie", fmt.Sprintf("auth=%s", authCookie))
 
 	resp, err := client.Do(req)
