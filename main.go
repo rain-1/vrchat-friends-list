@@ -521,7 +521,6 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 
 	///////////////
 
-
 	html := fmt.Sprintf(`
 	<!DOCTYPE html>
 	<html>
