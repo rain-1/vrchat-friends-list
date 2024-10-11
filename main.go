@@ -54,6 +54,29 @@ type Friend struct {
 	Location                       string   `json:"location"`
 }
 
+type ResponseBody struct {
+	FetchedAt string     `json:"fetchedAt"`
+	Instances []Instance `json:"instances"`
+}
+
+type Instance struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	WorldID     string   `json:"worldId"`
+	Type        string   `json:"type"`
+	UserCount   int      `json:"userCount"`
+	Capacity    int      `json:"capacity"`
+	Tags        []string `json:"tags"`
+	World       World    `json:"world"`
+}
+
+type World struct {
+	Name        string `json:"name"`
+	AuthorName  string `json:"authorName"`
+	Description string `json:"description"`
+	ThumbnailImageUrl string `json:"thumbnailImageUrl"`
+}
+
 const useragent = "rain-1 vrchat-friend-list 1"
 
 func main() {
@@ -480,7 +503,7 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	var user_id = ck.Value
 
-	var endpoint = fmt.Sprintf(`https://vrchat.com/users/%s/instances/groups/`, user_id)
+	var endpoint = fmt.Sprintf(`https://vrchat.com/api/1/users/%s/instances/groups/`, user_id)
 
 	//////////////////////
 
@@ -492,6 +515,11 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 	}
 
 	req.Header.Set("User-Agent", useragent)
+
+	// Forward cookies from client to API
+	for _, cookie := range r.Cookies() {
+		req.AddCookie(cookie)
+	}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -521,18 +549,79 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 
 	///////////////
 
-	html := fmt.Sprintf(`
+	const htmlTemplate = `
 	<!DOCTYPE html>
-	<html>
+	<html lang="en">
 	<head>
-		<title>VRChat handleGroups</title>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>VRChat Instances</title>
+		<style>
+			table {
+				border-collapse: collapse;
+				width: 100%;
+			}
+			th, td {
+				border: 1px solid #ddd;
+				padding: 8px;
+				text-align: left;
+			}
+			th {
+				background-color: #f2f2f2;
+			}
+		</style>
 	</head>
 	<body>
-		%s
+        <h1>VRChat Instances</h1>
+    <table>
+        <tr>
+            <th>Thumbnail</th>
+            <th>Name</th>
+            <th>World Name</th>
+            <th>World Author</th>
+            <th>Type</th>
+            <th>Users</th>
+            <th>Capacity</th>
+            <th>Tags</th>
+            <th>Description</th>
+        </tr>
+        {{range .Instances}}
+        <tr>
+            <td><img src="{{.World.ThumbnailImageUrl}}" alt="{{.World.Name}} thumbnail" class="thumbnail"></td>
+            <td>{{.Name}}</td>
+            <td>{{.World.Name}}</td>
+            <td>{{.World.AuthorName}}</td>
+            <td>{{.Type}}</td>
+            <td>{{.UserCount}}</td>
+            <td>{{.Capacity}}</td>
+            <td>{{join .Tags ", "}}</td>
+            <td>{{.World.Description}}</td>
+        </tr>
+        {{end}}
+    </table>
+
 	</body>
 	</html>
-	`, user_id)
+	`
+	
+	var responseBody ResponseBody
+	err = json.Unmarshal(body, &responseBody)
+	if err != nil {
+		log.Fatalf("Error parsing JSON: %v", err)
+	}
 
+	// Create HTML template
+	tmpl, err := template.New("instances").Funcs(template.FuncMap{
+		"join": strings.Join,
+	}).Parse(htmlTemplate)
+	if err != nil {
+		log.Fatalf("Error creating template: %v", err)
+	}
+
+	// Generate HTML output
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
+	err = tmpl.Execute(w, responseBody)
+	if err != nil {
+		log.Fatalf("Error generating HTML: %v", err)
+	}
 }
