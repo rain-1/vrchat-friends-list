@@ -10,21 +10,17 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
-//	"unicode/utf8"
-	"time"
 	"sort"
+	"strings"
+	"time"
 )
-
-type TwoFactorAuthRequest struct {
-	Code string `json:"code"`
-}
 
 type AuthResponse struct {
 	RequiresTwoFactorAuth []string `json:"requiresTwoFactorAuth"`
 }
 
 type VRChatUser struct {
+	ID                            string   `json:"id"`
 	AcceptedTOSVersion            int      `json:"acceptedTOSVersion"`
 	AcceptedPrivacyVersion        int      `json:"acceptedPrivacyVersion"`
 	AccountDeletionDate           string   `json:"accountDeletionDate"`
@@ -36,7 +32,10 @@ type VRChatUser struct {
 	CurrentAvatarAssetUrl         string   `json:"currentAvatarAssetUrl"`
 	CurrentAvatarImageUrl         string   `json:"currentAvatarImageUrl"`
 	CurrentAvatarThumbnailImageUrl string   `json:"currentAvatarThumbnailImageUrl"`
-	ID                            string   `json:"id"`
+}
+
+type TwoFactorAuthRequest struct {
+	Code string `json:"code"`
 }
 
 type Friend struct {
@@ -60,27 +59,28 @@ type ResponseBody struct {
 }
 
 type Instance struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	WorldID     string   `json:"worldId"`
-	Type        string   `json:"type"`
-	UserCount   int      `json:"userCount"`
-	Capacity    int      `json:"capacity"`
-	Tags        []string `json:"tags"`
-	World       World    `json:"world"`
+	ID        string   `json:"id"`
+	Name      string   `json:"name"`
+	WorldID   string   `json:"worldId"`
+	Type      string   `json:"type"`
+	UserCount int      `json:"userCount"`
+	Capacity  int      `json:"capacity"`
+	Tags      []string `json:"tags"`
+	World     World    `json:"world"`
 }
 
 type World struct {
-	Name        string `json:"name"`
-	AuthorName  string `json:"authorName"`
-	Description string `json:"description"`
+	Name              string `json:"name"`
+	AuthorName        string `json:"authorName"`
+	Description       string `json:"description"`
 	ThumbnailImageUrl string `json:"thumbnailImageUrl"`
 }
 
 const useragent = "rain-1 vrchat-friend-list 1"
 
 func main() {
-	http.HandleFunc("/", handleLogin)
+	http.HandleFunc("/", handleMain)
+	http.HandleFunc("/login", handleLogin)
 	http.HandleFunc("/auth", handleAuth)
 	http.HandleFunc("/2fa", handle2FA)
 	http.HandleFunc("/verify2fa", handleVerify2FA)
@@ -90,9 +90,32 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func handleLogin(w http.ResponseWriter, r *http.Request) {
-	// TODO: If auth cookie, try to just log in straight away instead of presenting a login page
+func handleMain(w http.ResponseWriter, r *http.Request) {
+	_, err := r.Cookie("auth")
+	if err != nil {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return
+	}
 
+	html := `
+	<!DOCTYPE html>
+	<html>
+	<head>
+		<title>VRChat Dashboard</title>
+	</head>
+	<body>
+		<h1>VRChat Dashboard</h1>
+		<ul>
+			<li><a href="/friends">View Friends</a></li>
+			<li><a href="/groups">View Groups</a></li>
+		</ul>
+	</body>
+	</html>
+	`
+	w.Write([]byte(html))
+}
+
+func handleLogin(w http.ResponseWriter, r *http.Request) {
 	html := `
 	<!DOCTYPE html>
 	<html>
@@ -115,69 +138,33 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func handleAuth(w http.ResponseWriter, r *http.Request) {
-	// if r.Method != "GET" {
-	// 	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-	// 	return
-	// }
-
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
 	auth := base64.StdEncoding.EncodeToString([]byte(url.QueryEscape(username) + ":" + url.QueryEscape(password)))
 
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://vrchat.com/api/1/auth/user", nil)
-	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return
-	}
-
-	req.Header.Set("Authorization", "Basic "+auth)
-	req.Header.Set("User-Agent", useragent)
-
-	// Forward cookies from client to API
-	for _, cookie := range r.Cookies() {
-		req.AddCookie(cookie)
-	}
-
-	resp, err := client.Do(req)
+	resp, body, err := makeRequest(r, "GET", "https://vrchat.com/api/1/auth/user", nil, map[string]string{"Authorization": "Basic " + auth})
 	if err != nil {
 		http.Error(w, "Error making request", http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Error reading response", http.StatusInternalServerError)
-		return
-	}
-
-	// Store cookies from API response to client's browser
 	for _, cookie := range resp.Cookies() {
 		http.SetCookie(w, cookie)
 	}
 
-	// Print result and return code to terminal
-	fmt.Printf("Status Code: %d\n", resp.StatusCode)
-	fmt.Printf("Response Body: %s\n", string(body))
-
-	// // Check if 2FA is required
-	// if resp.StatusCode == 200 {
-	// 	// Redirect to 2FA page
-	// 	http.Redirect(w, r, "/2fa", http.StatusSeeOther)
-	// 	return
-	// }
-
 	var authResp AuthResponse
 	err = json.Unmarshal(body, &authResp)
-	if err == nil && len(authResp.RequiresTwoFactorAuth) > 0 && authResp.RequiresTwoFactorAuth[0] == "emailOtp" {
-		// Redirect to 2FA page
+	if err == nil && len(authResp.RequiresTwoFactorAuth) > 0 {
+		http.SetCookie(w, &http.Cookie{
+			Name:  "2fa_type",
+			Value: authResp.RequiresTwoFactorAuth[0],
+			Path:  "/",
+		})
 		http.Redirect(w, r, "/2fa", http.StatusSeeOther)
 		return
 	}
 
-	// If not 2FA, process the JSON response
 	var user VRChatUser
 	err = json.Unmarshal(body, &user)
 	if err != nil {
@@ -185,7 +172,6 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the user id into a cookie for later use
 	http.SetCookie(w, &http.Cookie{
 		Name:    "user_id",
 		Value:   user.ID,
@@ -193,82 +179,33 @@ func handleAuth(w http.ResponseWriter, r *http.Request) {
 		Path:    "/",
 	})
 
-	// Generate HTML representation of the user data and friends list
-	htmlContent := generateUserHTML(user)
-
-	// Return web page with the formatted user data and friends list
-	html := fmt.Sprintf(`
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<title>VRChat User Info</title>
-		<style>
-			body { font-family: Arial, sans-serif; line-height: 1.6; padding: 20px; }
-			h1 { color: #333; }
-			h2 { color: #666; }
-			.user-info { background-color: #f4f4f4; padding: 15px; border-radius: 5px; }
-			.friends-list { margin-top: 20px; }
-			.friend-id { background-color: #e9e9e9; padding: 5px; margin: 5px 0; border-radius: 3px; }
-		</style>
-	</head>
-	<body>
-		<h1>VRChat User Info</h1>
-		<div class="user-info">
-			%s
-		</div>
-	</body>
-	</html>
-	`, htmlContent)
-	
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(html))
-}
-
-func generateUserHTML(user VRChatUser) string {
-	var buf bytes.Buffer
-
-	buf.WriteString(fmt.Sprintf("<h2>User Information</h2>"))
-	buf.WriteString(fmt.Sprintf("<p><strong>Accepted TOS Version:</strong> %d</p>", user.AcceptedTOSVersion))
-	buf.WriteString(fmt.Sprintf("<p><strong>Accepted Privacy Version:</strong> %d</p>", user.AcceptedPrivacyVersion))
-	buf.WriteString(fmt.Sprintf("<p><strong>Account Deletion Date:</strong> %s</p>", template.HTMLEscapeString(user.AccountDeletionDate)))
-	buf.WriteString(fmt.Sprintf("<p><strong>Allow Avatar Copying:</strong> %t</p>", user.AllowAvatarCopying))
-	buf.WriteString(fmt.Sprintf("<p><strong>Bio:</strong> %s</p>", template.HTMLEscapeString(user.Bio)))
-	buf.WriteString(fmt.Sprintf("<p><strong>Bio Links:</strong> %s</p>", template.HTMLEscapeString(strings.Join(user.BioLinks, ", "))))
-	buf.WriteString(fmt.Sprintf("<p><strong>Current Avatar:</strong> %s</p>", template.HTMLEscapeString(user.CurrentAvatar)))
-	buf.WriteString(fmt.Sprintf("<p><strong>Current Avatar Asset URL:</strong> %s</p>", template.HTMLEscapeString(user.CurrentAvatarAssetUrl)))
-	buf.WriteString(fmt.Sprintf("<p><strong>Current Avatar Image URL:</strong> %s</p>", template.HTMLEscapeString(user.CurrentAvatarImageUrl)))
-	//buf.WriteString(fmt.Sprintf("<img src=%s></img>", user.CurrentAvatarImageUrl))
-	buf.WriteString(fmt.Sprintf("<p><strong>Current Avatar Thumbnail Image URL:</strong> %s</p>", template.HTMLEscapeString(user.CurrentAvatarThumbnailImageUrl)))
-	buf.WriteString(fmt.Sprintf("<img src=%s></img>", user.CurrentAvatarThumbnailImageUrl))
-
-	buf.WriteString("<h2>Active Friends</h2>")
-	buf.WriteString("<div class='friends-list'>")
-	for _, friendID := range user.ActiveFriends {
-		buf.WriteString(fmt.Sprintf("<div class='friend-id'>%s</div>", template.HTMLEscapeString(friendID)))
-	}
-	buf.WriteString("</div>")
-
-	return buf.String()
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func handle2FA(w http.ResponseWriter, r *http.Request) {
-	html := `
+	twoFAType, err := r.Cookie("2fa_type")
+	if err != nil {
+		http.Error(w, "No 2FA type specified", http.StatusBadRequest)
+		return
+	}
+
+	html := fmt.Sprintf(`
 	<!DOCTYPE html>
 	<html>
 	<head>
 		<title>VRChat 2FA</title>
 	</head>
 	<body>
-		<h1>VRChat 2FA</h1>
+		<h1>VRChat 2FA (%s)</h1>
 		<form action="/verify2fa" method="post">
+			<input type="hidden" name="type" value="%s">
 			<label for="code">Enter 2FA Code:</label><br>
 			<input type="text" id="code" name="code"><br><br>
 			<input type="submit" value="Verify">
 		</form>
 	</body>
 	</html>
-	`
+	`, twoFAType.Value, twoFAType.Value)
 	w.Write([]byte(html))
 }
 
@@ -278,6 +215,7 @@ func handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	twoFAType := r.FormValue("type")
 	code := r.FormValue("code")
 
 	twoFactorAuthReq := TwoFactorAuthRequest{
@@ -290,87 +228,24 @@ func handleVerify2FA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	client := &http.Client{}
-	req, err := http.NewRequest("POST", "https://vrchat.com/api/1/auth/twofactorauth/emailotp/verify", bytes.NewBuffer(jsonData))
-	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", useragent)
-
-	// Forward cookies from client to API
-	for _, cookie := range r.Cookies() {
-		req.AddCookie(cookie)
-	}
-
-	resp, err := client.Do(req)
+	endpoint := fmt.Sprintf("https://vrchat.com/api/1/auth/twofactorauth/%s/verify", twoFAType)
+	resp, _, err := makeRequest(r, "POST", endpoint, bytes.NewBuffer(jsonData), map[string]string{"Content-Type": "application/json"})
 	if err != nil {
 		http.Error(w, "Error making request", http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Error reading response", http.StatusInternalServerError)
-		return
-	}
-
-	// Store cookies from API response to client's browser
 	for _, cookie := range resp.Cookies() {
 		http.SetCookie(w, cookie)
 	}
 
-	// Print result and return code to terminal
-	fmt.Printf("2FA Verification Status Code: %d\n", resp.StatusCode)
-	fmt.Printf("2FA Verification Response Body: %s\n", string(body))
-
-	// Return simple web page with the info
-	result := fmt.Sprintf("2FA Verification Status Code: %d<br>Response Body: %s", resp.StatusCode, string(body))
-	html := fmt.Sprintf(`
-	<!DOCTYPE html>
-	<html>
-	<head>
-		<title>VRChat 2FA Verification Result</title>
-	</head>
-	<body>
-		<h1>VRChat 2FA Verification Result</h1>
-		<pre>%s</pre>
-	</body>
-	</html>
-	`, result)
-
-	w.Header().Set("Content-Type", "text/html")
-	w.Write([]byte(html))
+	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
 func handleFriends(w http.ResponseWriter, r *http.Request) {
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", "https://vrchat.com/api/1/auth/user/friends?n=100", nil)
-	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return
-	}
-
-	// Forward cookies from client to API
-	for _, cookie := range r.Cookies() {
-		req.AddCookie(cookie)
-	}
-	req.Header.Set("User-Agent", useragent)
-	//req.Header.Set("Cookie", fmt.Sprintf("auth=%s", authCookie))
-
-	resp, err := client.Do(req)
+	_, body, err := makeRequest(r, "GET", "https://vrchat.com/api/1/auth/user/friends?n=100", nil, nil)
 	if err != nil {
 		http.Error(w, "Error making request", http.StatusInternalServerError)
-		return
-	}
-	defer resp.Body.Close()
-
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		http.Error(w, "Error reading response", http.StatusInternalServerError)
 		return
 	}
 
@@ -382,16 +257,15 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statusMap := map[string]int{
-		"join me": 0,  // 🔵
-		"active":  1,  // 🟢
-		"ask me":  2,  // 🟠
-		"busy":    3,  // 🔴
+		"join me": 0,
+		"active":  1,
+		"ask me":  2,
+		"busy":    3,
 	}
 	sort.Slice(friends, func(i, j int) bool {
 		statusI, existsI := statusMap[strings.ToLower(friends[i].Status)]
 		statusJ, existsJ := statusMap[strings.ToLower(friends[j].Status)]
 		
-		// Handle cases where the status might not be found (use default value of 99)
 		if !existsI {
 			statusI = 99
 		}
@@ -399,7 +273,6 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 			statusJ = 99
 		}
 
-		// Compare the numeric values
 		return statusI < statusJ
 	})	
 
@@ -463,15 +336,15 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 				{{ end }}
 				<h2>{{.DisplayName}}</h2>
 				<b>{{.Status}}</b> {{ if eq .Status "busy" }}
-					🔴 <!-- Red Circle -->
+					🔴
 				{{ else if eq .Status "ask me" }}
-					🟠 <!-- Orange Circle -->
+					🟠
 				{{ else if eq .Status "join me" }}
-					🔵 <!-- Blue Circle -->
+					🔵
 				{{ else if eq .Status "active" }}
-					🟢 <!-- Green Circle -->
+					🟢
 				{{ else }}
-					⚪ <!-- Default Circle for any other status -->
+					⚪
 				{{ end }}
 				<p>{{.StatusDescription}}</p>
 			</div>
@@ -482,72 +355,34 @@ func handleFriends(w http.ResponseWriter, r *http.Request) {
 </html>
 `))
 
-//<p class="bio">{{.Bio}}</p>
-
 	err = tmpl.Execute(w, friends)
 	if err != nil {
 		http.Error(w, "Error rendering template", http.StatusInternalServerError)
 	}
 }
 
-// <img src="{{.CurrentAvatarImageUrl}}" alt="{{.DisplayName}}'s Avatar">
-// <img src="{{.CurrentAvatarThumbnailImageUrl}}" alt="{{.DisplayName}}'s Avatar">
-// <img src="{{.ProfilePicOverride}}" alt="{{.DisplayName}}'s Avatar">
-// <img src="{{.ProfilePicOverrideThumbnail}}" alt="{{.DisplayName}}'s Avatar">
-
 func handleGroups(w http.ResponseWriter, r *http.Request) {
-	var ck, err = r.Cookie("user_id")
+	userID, err := r.Cookie("user_id")
 	if err != nil {
 		http.Error(w, "Error no user id cookie stored", http.StatusInternalServerError)
 		return
 	}
-	var user_id = ck.Value
-
-	var endpoint = fmt.Sprintf(`https://vrchat.com/api/1/users/%s/instances/groups/`, user_id)
-
-	//////////////////////
-
-	client := &http.Client{}
-	req, err := http.NewRequest("GET", endpoint, nil)
-	if err != nil {
-		http.Error(w, "Error creating request", http.StatusInternalServerError)
-		return
-	}
-
-	req.Header.Set("User-Agent", useragent)
-
-	// Forward cookies from client to API
-	for _, cookie := range r.Cookies() {
-		req.AddCookie(cookie)
-	}
-
-	resp, err := client.Do(req)
+	
+	endpoint := fmt.Sprintf("https://vrchat.com/api/1/users/%s/instances/groups/", userID.Value)
+	_, body, err := makeRequest(r, "GET", endpoint, nil, nil)
 	if err != nil {
 		http.Error(w, "Error making request", http.StatusInternalServerError)
 		return
 	}
-	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	fmt.Println(string(body))
+	//{"error":"The endpoint you're looking for is not implemented by our system.","status_code":404}
+
+	var responseBody ResponseBody
+	err = json.Unmarshal(body, &responseBody)
 	if err != nil {
-		http.Error(w, "Error reading response", http.StatusInternalServerError)
-		return
+		log.Fatalf("Error parsing JSON: %v", err)
 	}
-
-	// Print result and return code to terminal
-	fmt.Printf("Status Code: %d\n", resp.StatusCode)
-	fmt.Printf("Response Body: %s\n", string(body))
-
-
-	// var authResp AuthResponse
-	// err = json.Unmarshal(body, &authResp)
-	// if err == nil && len(authResp.RequiresTwoFactorAuth) > 0 && authResp.RequiresTwoFactorAuth[0] == "emailOtp" {
-	// 	// Redirect to 2FA page
-	// 	http.Redirect(w, r, "/2fa", http.StatusSeeOther)
-	// 	return
-	// }
-
-	///////////////
 
 	const htmlTemplate = `
 	<!DOCTYPE html>
@@ -604,13 +439,6 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 	</html>
 	`
 	
-	var responseBody ResponseBody
-	err = json.Unmarshal(body, &responseBody)
-	if err != nil {
-		log.Fatalf("Error parsing JSON: %v", err)
-	}
-
-	// Create HTML template
 	tmpl, err := template.New("instances").Funcs(template.FuncMap{
 		"join": strings.Join,
 	}).Parse(htmlTemplate)
@@ -618,10 +446,47 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Error creating template: %v", err)
 	}
 
-	// Generate HTML output
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	err = tmpl.Execute(w, responseBody)
 	if err != nil {
 		log.Fatalf("Error generating HTML: %v", err)
 	}
+}
+
+func makeRequest(r *http.Request, method, url string, body *bytes.Buffer, headers map[string]string) (*http.Response, []byte, error) {
+	client := &http.Client{}
+	var req *http.Request
+	var err error
+
+	if body != nil {
+		req, err = http.NewRequest(method, url, body)
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+
+	if err != nil {
+		return nil, nil, err
+	}
+
+	req.Header.Set("User-Agent", useragent)
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	for _, cookie := range r.Cookies() {
+		req.AddCookie(cookie)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp, responseBody, nil
 }

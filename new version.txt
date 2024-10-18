@@ -1,0 +1,50 @@
+we need to deduplicate the repitition in the functions
+every function does mostly the same things
+cookie carrying is the main thing
+
+we also need to handle the 2fa stuff better
+there are multiple 2fa options
+bad easy way to handle it would be multiple buttons
+better way is copy that 'state' across the redirect
+
+we should have a main page that:
+* starts the log in process if you are not logged in
+* shows friends and groups otherwise
+
+the log in process
+* takes username and password, does the encoding
+* hits the endpoint with it
+* gets 2fa options returned back ["emailOtp"] or ["totp","otp"]
+* need to go to the appropriate endpoint based on that:
+* emailOtp -> https://vrchat.com/api/1/auth/twofactorauth/%s/verify
+* otp -> https://vrchat.com/api/1/auth/twofactorauth/%s/verify
+
+Verify 2FA code
+post /auth/twofactorauth/totp/verify
+Finishes the login sequence with a normal 2FA-generated code for accounts with 2FA-protection enabled.
+
+API Key (auth)
+CODE SAMPLES
+cURL
+Copy
+curl -X POST "https://vrchat.com/api/1/auth/twofactorauth/totp/verify" \
+     -H "Content-Type: application/json" \
+     -b "auth={authCookie}" \
+     --data '{"code": "string"}'
+
+
+Verify 2FA email code
+post /auth/twofactorauth/emailotp/verify
+Finishes the login sequence with an 2FA email code.
+
+API Key (auth)
+CODE SAMPLES
+cURL
+Copy
+curl -X POST "https://vrchat.com/api/1/auth/twofactorauth/emailotp/verify" \
+     -H "Content-Type: application/json" \
+     -b "auth={authCookie}" \
+     --data '{"code": "string"}'
+
+
+we will handle these two, not going to handle recovery codes.
