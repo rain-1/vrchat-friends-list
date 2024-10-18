@@ -63,6 +63,7 @@ type Instance struct {
 	Name      string   `json:"name"`
 	WorldID   string   `json:"worldId"`
 	Type      string   `json:"type"`
+	GroupAccessType string `json:"groupAccessType"`
 	UserCount int      `json:"userCount"`
 	Capacity  int      `json:"capacity"`
 	Tags      []string `json:"tags"`
@@ -411,25 +412,19 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
     <table>
         <tr>
             <th>Thumbnail</th>
-            <th>Name</th>
             <th>World Name</th>
             <th>World Author</th>
             <th>Type</th>
             <th>Users</th>
-            <th>Capacity</th>
-            <th>Tags</th>
             <th>Description</th>
         </tr>
         {{range .Instances}}
         <tr>
             <td><img src="{{.World.ThumbnailImageUrl}}" alt="{{.World.Name}} thumbnail" class="thumbnail"></td>
-            <td>{{.Name}}</td>
             <td>{{.World.Name}}</td>
             <td>{{.World.AuthorName}}</td>
-            <td>{{.Type}}</td>
-            <td>{{.UserCount}}</td>
-            <td>{{.Capacity}}</td>
-            <td>{{join .Tags ", "}}</td>
+            <td>{{.GroupAccessType}}</td>
+            <td>{{.UserCount}} / {{.Capacity}}</td>
             <td>{{.World.Description}}</td>
         </tr>
         {{end}}
