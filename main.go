@@ -486,7 +486,6 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
         {{range .ResponseBody.Instances}}
         <tr>
             <td><img src="{{.World.ThumbnailImageUrl}}" alt="{{.World.Name}} thumbnail" class="thumbnail"></td>
-            <td>{{.OwnerID}}</td>
 			<td>{{call $.LookupGroup .OwnerID}}</td>
             <td>{{.World.Name}} @ {{.Region}}</td>
             <td>{{.World.AuthorName}}</td>
