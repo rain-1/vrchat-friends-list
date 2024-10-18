@@ -477,6 +477,7 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
     <table>
         <tr>
             <th>Thumbnail</th>
+            <th>Group</th>
             <th>World Name</th>
             <th>World Author</th>
             <th>Type</th>
