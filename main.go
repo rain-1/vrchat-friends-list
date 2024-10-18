@@ -60,6 +60,7 @@ type ResponseBody struct {
 
 type Instance struct {
 	ID        string   `json:"id"`
+	OwnerID   string   `json:"ownerId"`
 	Name      string   `json:"name"`
 	WorldID   string   `json:"worldId"`
 	Type      string   `json:"type"`
@@ -422,6 +423,7 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
         {{range .Instances}}
         <tr>
             <td><img src="{{.World.ThumbnailImageUrl}}" alt="{{.World.Name}} thumbnail" class="thumbnail"></td>
+            <td>{{.OwnerID}}</td>
             <td>{{.World.Name}} @ {{.Region}}</td>
             <td>{{.World.AuthorName}}</td>
             <td>{{.GroupAccessType}}</td>
