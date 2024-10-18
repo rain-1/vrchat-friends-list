@@ -58,6 +58,11 @@ type ResponseBody struct {
 	Instances []Instance `json:"instances"`
 }
 
+type TemplateData struct {
+    ResponseBody  ResponseBody
+    LookupGroup   func(string) string
+}
+
 type Instance struct {
 	ID        string   `json:"id"`
 	OwnerID   string   `json:"ownerId"`
@@ -77,6 +82,27 @@ type World struct {
 	AuthorName        string `json:"authorName"`
 	Description       string `json:"description"`
 	ThumbnailImageUrl string `json:"thumbnailImageUrl"`
+}
+
+type Membership struct {
+    BannerID         string `json:"bannerId"`
+    BannerURL        string `json:"bannerUrl"`
+    Description      string `json:"description"`
+    Discriminator    string `json:"discriminator"`
+    GroupID          string `json:"groupId"`
+    IconID           string `json:"iconId"`
+    IconURL          string `json:"iconUrl"`
+    ID               string `json:"id"`
+    IsRepresenting   bool   `json:"isRepresenting"`
+    LastPostCreatedAt string `json:"lastPostCreatedAt,omitempty"`
+    LastPostReadAt   string `json:"lastPostReadAt,omitempty"`
+    MemberCount      int    `json:"memberCount"`
+    MemberVisibility string `json:"memberVisibility"`
+    MutualGroup      bool   `json:"mutualGroup"`
+    Name             string `json:"name"`
+    OwnerID          string `json:"ownerId"`
+    Privacy          string `json:"privacy"`
+    ShortCode        string `json:"shortCode"`
 }
 
 const useragent = "rain-1 vrchat-friend-list 1"
@@ -371,14 +397,51 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	
-	endpoint := fmt.Sprintf("https://vrchat.com/api/1/users/%s/instances/groups/", userID.Value)
-	_, body, err := makeRequest(r, "GET", endpoint, nil, nil)
+	endpointMemberships := fmt.Sprintf("https://vrchat.com/api/1/users/%s/groups/", userID.Value)
+	_, bodyMemberships, err := makeRequest(r, "GET", endpointMemberships, nil, nil)
+	if err != nil {
+		http.Error(w, "Error making request", http.StatusInternalServerError)
+		return
+	}
+	// fmt.Println("string(bodyMemberships)")
+	// fmt.Println(string(bodyMemberships))
+
+	var membershipResponse []Membership
+	err = json.Unmarshal(bodyMemberships, &membershipResponse)
+	if err != nil {
+		log.Fatalf("Error parsing JSON: %v", err)
+	}
+	//fmt.Println(membershipResponse)
+
+	// transform []Membership into a golang map from id to Membership
+	membershipMap := make(map[string]Membership)
+	for _, membership := range membershipResponse {
+		membershipMap[membership.GroupID] = membership
+	}
+	// fmt.Println("START membershipMap")
+	// // fmt.Println(membershipMap)
+	// for k, _ := range membershipMap {
+	// 	fmt.Println("KEY:", k)
+	// }
+	
+	// fmt.Println("END membershipMap")
+
+	lookupGroup := func(ownerID string) string {
+		// fmt.Println("Looking up group id", ownerID)
+        if membership, exists := membershipMap[ownerID]; exists {
+            return membership.Name
+        }
+        return "Unknown Group"
+    }
+
+	endpointInstances := fmt.Sprintf("https://vrchat.com/api/1/users/%s/instances/groups/", userID.Value)
+	_, body, err := makeRequest(r, "GET", endpointInstances, nil, nil)
 	if err != nil {
 		http.Error(w, "Error making request", http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Println(string(body))
+	//fmt.Println(string(body))
 	//{"error":"The endpoint you're looking for is not implemented by our system.","status_code":404}
 
 	var responseBody ResponseBody
@@ -420,10 +483,11 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
             <th>Users</th>
             <th>Description</th>
         </tr>
-        {{range .Instances}}
+        {{range .ResponseBody.Instances}}
         <tr>
             <td><img src="{{.World.ThumbnailImageUrl}}" alt="{{.World.Name}} thumbnail" class="thumbnail"></td>
             <td>{{.OwnerID}}</td>
+			<td>{{call $.LookupGroup .OwnerID}}</td>
             <td>{{.World.Name}} @ {{.Region}}</td>
             <td>{{.World.AuthorName}}</td>
             <td>{{.GroupAccessType}}</td>
@@ -444,8 +508,13 @@ func handleGroups(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Error creating template: %v", err)
 	}
 
+	data := TemplateData{
+		ResponseBody:   responseBody,
+		LookupGroup: lookupGroup,
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	err = tmpl.Execute(w, responseBody)
+	err = tmpl.Execute(w, data)
 	if err != nil {
 		log.Fatalf("Error generating HTML: %v", err)
 	}
